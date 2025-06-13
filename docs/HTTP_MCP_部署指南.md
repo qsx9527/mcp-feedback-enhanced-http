@@ -29,14 +29,17 @@ MCP Feedback Enhanced 现在支持两种运行模式：
 
 #### 方法一：使用启动脚本（推荐）
 ```bash
-# 基本启动
+# 基本启动（仅本地访问）
 python start_http_server.py
 
-# # 自定义主机和端口
-# python start_http_server.py --host 127.0.0.1 --port 8767
+# 启动并允许外部访问（推荐用于云服务器）
+uv run python start_http_server.py --host 0.0.0.0 --port 8769 --debug
 
-# 启用调试模式
-python start_http_server.py --host 127.0.0.1 --port 8769 --debug
+# 绑定到特定IP
+uv run python start_http_server.py --host 172.16.0.3 --port 8769 --debug
+
+# 仅本地访问
+uv run python start_http_server.py --host 127.0.0.1 --port 8769 --debug
 ```
 
 #### 方法二：使用 Python 命令行
@@ -112,12 +115,39 @@ CMD ["python", "-m", "mcp_feedback_enhanced", "http-server", "--host", "0.0.0.0"
 HTTP MCP Endpoint: http://localhost:8767/mcp
 ```
 
-### 3. 环境变量配置
+### 3. IP地址配置
+
+#### 自动检测本机IP
+```bash
+# 获取主要内网IP
+INTERNAL_IP=$(hostname -I | awk '{print $1}')
+echo "内网IP: $INTERNAL_IP"
+
+# 获取所有网卡IP（排除回环）
+ip addr show | grep -E "inet [0-9]" | grep -v "127.0.0.1" | awk '{print $2}' | cut -d'/' -f1
+```
+
+#### 云服务器配置说明
+```bash
+# 云服务器常见情况：
+# - 公网IP: 117.72.114.36 (外部访问地址)
+# - 内网IP: 172.16.0.3 (服务器实际绑定地址)
+
+# 推荐配置：绑定到 0.0.0.0 监听所有接口
+uv run python start_http_server.py --host 0.0.0.0 --port 8769 --debug
+
+# 访问地址：
+# - 内网访问: http://172.16.0.3:8769
+# - 公网访问: http://117.72.114.36:8769 (需要防火墙开放端口)
+# - 本地访问: http://localhost:8769
+```
+
+### 4. 环境变量配置
 
 ```bash
 # 服务器配置
-export MCP_HTTP_HOST=0.0.0.0          # 服务器主机地址
-export MCP_HTTP_PORT=8767              # 服务器端口
+export MCP_HTTP_HOST=0.0.0.0          # 服务器主机地址（0.0.0.0 监听所有接口）
+export MCP_HTTP_PORT=8769              # 服务器端口
 export MCP_USE_HTTPS=false             # 是否使用 HTTPS
 
 # 调试配置
@@ -132,8 +162,12 @@ export MCP_WEB_PORT=8766              # Web UI 端口（与 HTTP MCP 端口不�
 ### 1. 测试服务器连接
 
 ```bash
+# 测试健康检查
+curl -s http://localhost:8769/health
+# 响应: {"status":"healthy","version":"2.3.0","active_sessions":0}
+
 # 测试初始化
-curl -X POST http://localhost:8767/mcp \
+curl -X POST http://localhost:8769/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -146,7 +180,7 @@ curl -X POST http://localhost:8767/mcp \
   }'
 
 # 测试工具列表
-curl -X POST http://localhost:8767/mcp \
+curl -X POST http://localhost:8769/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -154,12 +188,15 @@ curl -X POST http://localhost:8767/mcp \
     "method": "tools/list",
     "params": {}
   }'
+
+# 云服务器外部访问测试（替换为你的公网IP）
+curl -s http://117.72.114.36:8769/health
 ```
 
 ### 2. 调用交互式回饋工具
 
 ```bash
-curl -X POST http://localhost:8767/mcp \
+curl -X POST http://localhost:8769/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -199,6 +236,108 @@ curl -X POST http://localhost:8767/mcp \
 }
 ```
 
+## 云服务器部署
+
+### 快速部署指南
+
+#### 方法一：使用自动配置脚本（推荐）
+```bash
+# 进入项目目录
+cd /root/project/mcp/mcp-feedback-enhanced-http
+
+# 运行自动配置脚本
+bash scripts/setup_cloud_server.sh
+```
+
+自动配置脚本将：
+- ✅ 自动检测内网IP地址
+- ✅ 配置系统防火墙（UFW/FirewallD）
+- ✅ 安装项目依赖
+- ✅ 生成启动命令
+- ✅ 提供访问地址信息
+
+#### 方法二：手动配置
+
+##### 1. 检测并配置IP
+```bash
+# 进入项目目录
+cd /root/project/mcp/mcp-feedback-enhanced-http
+
+# 检测本机IP
+INTERNAL_IP=$(hostname -I | awk '{print $1}')
+echo "检测到内网IP: $INTERNAL_IP"
+echo "公网IP: 请在云服务商控制台查看"
+
+# 安装依赖
+uv sync
+
+# 启动服务（推荐绑定到 0.0.0.0）
+uv run python start_http_server.py --host 0.0.0.0 --port 8769 --debug
+```
+
+##### 2. 防火墙配置
+```bash
+# Ubuntu/Debian 系统
+sudo ufw allow 8769
+sudo ufw reload
+
+# CentOS/RHEL 系统  
+sudo firewall-cmd --permanent --add-port=8769/tcp
+sudo firewall-cmd --reload
+
+# 检查端口是否开放
+netstat -tlnp | grep 8769
+```
+
+##### 3. 云服务商安全组配置
+在云服务商控制台添加安全组规则：
+- **协议**: TCP
+- **端口范围**: 8769
+- **源地址**: 0.0.0.0/0 (允许所有IP) 或特定IP段
+- **描述**: MCP HTTP Server
+
+##### 4. 访问测试
+```bash
+# 本地测试
+curl -s http://localhost:8769/health
+
+# 内网测试
+curl -s http://172.16.0.3:8769/health
+
+# 公网测试（从其他机器）
+curl -s http://117.72.114.36:8769/health
+```
+
+##### 5. 创建系统服务（可选）
+```bash
+# 创建服务文件
+sudo tee /etc/systemd/system/mcp-http.service > /dev/null <<EOF
+[Unit]
+Description=MCP Feedback Enhanced HTTP Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/project/mcp/mcp-feedback-enhanced-http
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/root/.local/bin/uv run python start_http_server.py --host 0.0.0.0 --port 8769
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 启用并启动服务
+sudo systemctl daemon-reload
+sudo systemctl enable mcp-http
+sudo systemctl start mcp-http
+
+# 检查服务状态
+sudo systemctl status mcp-http
+```
+
 ## 生产环境部署
 
 ### 1. 使用反向代理
@@ -210,7 +349,7 @@ server {
     server_name your-domain.com;
 
     location /mcp {
-        proxy_pass http://localhost:8767;
+        proxy_pass http://localhost:8769;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -218,7 +357,7 @@ server {
     }
 
     location /session/ {
-        proxy_pass http://localhost:8767;
+        proxy_pass http://localhost:8769;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -253,9 +392,9 @@ Type=simple
 User=mcp
 WorkingDirectory=/opt/mcp-feedback-enhanced
 Environment=MCP_HTTP_HOST=0.0.0.0
-Environment=MCP_HTTP_PORT=8767
+Environment=MCP_HTTP_PORT=8769
 Environment=MCP_DEBUG=false
-ExecStart=/opt/mcp-feedback-enhanced/.venv/bin/python -m mcp_feedback_enhanced http-server
+ExecStart=/opt/mcp-feedback-enhanced/.venv/bin/uv run python start_http_server.py --host 0.0.0.0 --port 8769
 Restart=always
 RestartSec=10
 
@@ -269,10 +408,13 @@ WantedBy=multi-user.target
 
 ```bash
 # 检查服务器状态
-curl http://localhost:8767/health
+curl http://localhost:8769/health
 
 # 检查活跃会话
-curl http://localhost:8767/sessions
+curl http://localhost:8769/sessions
+
+# 云服务器公网访问检查
+curl http://117.72.114.36:8769/health
 ```
 
 ### 2. 日志监控
@@ -297,19 +439,24 @@ tail -f /var/log/mcp-feedback-enhanced.log
 
 根据您的环境选择合适的启动方式：
 
-1. **开发环境（推荐）**：使用 `start_http_server.py`
+1. **云服务器部署（推荐）**：绑定到所有接口
    ```bash
-   python start_http_server.py --host 127.0.0.1 --port 8769 --debug
+   uv run python start_http_server.py --host 0.0.0.0 --port 8769 --debug
    ```
 
-2. **直接调用方式**：适用于需要自定义 Python 路径的情况
+2. **本地开发环境**：仅本地访问
    ```bash
-   python -c "from src.mcp_feedback_enhanced.http_server import main; main()" --host 127.0.0.1 --port 8769 --debug
+   uv run python start_http_server.py --host 127.0.0.1 --port 8769 --debug
    ```
 
-3. **已安装包环境**：使用模块方式启动
+3. **指定内网IP**：绑定到特定网卡
    ```bash
-   python -m mcp_feedback_enhanced http-server --host 0.0.0.0 --port 8767 --debug
+   uv run python start_http_server.py --host 172.16.0.3 --port 8769 --debug
+   ```
+
+4. **直接调用方式**：适用于需要自定义 Python 路径的情况
+   ```bash
+   python -c "from src.mcp_feedback_enhanced.http_server import main; main()" --host 0.0.0.0 --port 8769 --debug
    ```
 
 ### 常见问题
@@ -321,10 +468,10 @@ tail -f /var/log/mcp-feedback-enhanced.log
 2. **端口冲突**
    ```bash
    # 检查端口占用
-   netstat -tlnp | grep 8767
+   netstat -tlnp | grep 8769
    
    # 使用不同端口
-   python start_http_server.py --port 8768
+   uv run python start_http_server.py --host 0.0.0.0 --port 8768
    ```
 
 3. **权限问题**
@@ -335,8 +482,12 @@ tail -f /var/log/mcp-feedback-enhanced.log
 
 4. **防火墙设置**
    ```bash
-   # 开放端口
-   sudo ufw allow 8767
+   # Ubuntu/Debian 开放端口
+   sudo ufw allow 8769
+   
+   # CentOS/RHEL 开放端口
+   sudo firewall-cmd --permanent --add-port=8769/tcp
+   sudo firewall-cmd --reload
    ```
 
 5. **模块导入错误**
