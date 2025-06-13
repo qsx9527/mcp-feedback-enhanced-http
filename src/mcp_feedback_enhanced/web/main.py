@@ -291,6 +291,54 @@ class WebUIManager:
     def get_current_session(self) -> Optional[WebFeedbackSession]:
         """獲取當前活躍會話"""
         return self.current_session
+    
+    def set_current_session_by_id(self, session_id: str) -> bool:
+        """通过会话ID设置当前活跃会话"""
+        # 首先检查新的会话管理器
+        from ..session_manager import get_session_manager
+        session_manager = get_session_manager()
+        session_data = session_manager.get_session(session_id)
+        
+        if session_data:
+            # 从新的会话管理器创建 WebFeedbackSession
+            web_session = WebFeedbackSession(
+                session_id=session_data.session_id,
+                project_directory=session_data.project_directory,
+                summary=session_data.summary
+            )
+            
+            # 同步状态
+            if session_data.status.value == "active":
+                web_session.status = SessionStatus.ACTIVE
+            elif session_data.status.value == "waiting":
+                web_session.status = SessionStatus.WAITING
+            elif session_data.status.value == "completed":
+                web_session.status = SessionStatus.COMPLETED
+            elif session_data.status.value == "error":
+                web_session.status = SessionStatus.ERROR
+            elif session_data.status.value == "timeout":
+                web_session.status = SessionStatus.TIMEOUT
+            
+            # 同步回饋数据
+            web_session.feedback_text = session_data.feedback_text
+            web_session.command_logs = session_data.command_logs
+            web_session.images = session_data.images
+            
+            # 设置为当前会话
+            self.current_session = web_session
+            self.sessions[session_id] = web_session
+            
+            debug_log(f"通过会话ID设置当前会话: {session_id}")
+            return True
+        
+        # 检查现有会话
+        if session_id in self.sessions:
+            self.current_session = self.sessions[session_id]
+            debug_log(f"从现有会话设置当前会话: {session_id}")
+            return True
+        
+        debug_log(f"未找到会话: {session_id}")
+        return False
 
     def remove_session(self, session_id: str):
         """移除回饋會話"""
@@ -441,8 +489,9 @@ class WebUIManager:
     def open_browser(self, url: str):
         """開啟瀏覽器"""
         try:
-            browser_opener = get_browser_opener()
-            browser_opener(url)
+            # browser_opener = get_browser_opener()
+            # browser_opener(url)
+            webbrowser.open(url)
             debug_log(f"已開啟瀏覽器：{url}")
         except Exception as e:
             debug_log(f"無法開啟瀏覽器: {e}")

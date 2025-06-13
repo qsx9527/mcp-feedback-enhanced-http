@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "mcp-feedback-enhanced-http": {
+      "command": "curl",
+      "args": [
+        "-X",
+        "POST",
+        "http://localhost:8767/mcp",
+        "-H",
+        "Content-Type: application/json",
+        "-d",
+        "@-"
+      ],
+      "timeout": 30,
+      "env": {
+        "MCP_DEBUG": "false"
+      }
+    }
+  }
+} 

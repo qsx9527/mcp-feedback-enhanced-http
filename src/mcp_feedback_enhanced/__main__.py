@@ -26,6 +26,12 @@ def main():
     # 伺服器命令（預設）
     server_parser = subparsers.add_parser('server', help='啟動 MCP 伺服器（預設）')
     
+    # HTTP 伺服器命令
+    http_parser = subparsers.add_parser('http-server', help='啟動 HTTP MCP 伺服器')
+    http_parser.add_argument('--host', default='localhost', help='服務器主機地址')
+    http_parser.add_argument('--port', type=int, default=8766, help='服務器端口')
+    http_parser.add_argument('--debug', action='store_true', help='啟用調試模式')
+    
     # 測試命令
     test_parser = subparsers.add_parser('test', help='執行測試')
     test_parser.add_argument('--web', action='store_true', help='測試 Web UI (自動持續運行)')
@@ -48,6 +54,8 @@ def main():
         show_version()
     elif args.command == 'server':
         run_server()
+    elif args.command == 'http-server':
+        run_http_server(args)
     elif args.command is None:
         run_server()
     else:
@@ -59,6 +67,37 @@ def run_server():
     """啟動 MCP 伺服器"""
     from .server import main as server_main
     return server_main()
+
+def run_http_server(args):
+    """啟動 HTTP MCP 伺服器"""
+    if args.debug:
+        os.environ["MCP_DEBUG"] = "true"
+    
+    # 設置環境變數
+    os.environ["MCP_HTTP_HOST"] = args.host
+    os.environ["MCP_HTTP_PORT"] = str(args.port)
+    
+    # 直接导入并运行 HTTP 服务器
+    import asyncio
+    from .http_server import HTTPMCPServer
+    
+    async def run_server():
+        server = HTTPMCPServer(host=args.host, port=args.port)
+        await server.start()
+        
+        try:
+            # 保持服务器运行
+            while server.is_running():
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            print("收到中断信号")
+        finally:
+            await server.stop()
+    
+    try:
+        asyncio.run(run_server())
+    except KeyboardInterrupt:
+        print("服务器已停止")
 
 def run_tests(args):
     """執行測試"""
